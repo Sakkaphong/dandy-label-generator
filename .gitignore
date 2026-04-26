@@ -1,0 +1,36 @@
+# =============================================================
+# LICENSED FONTS — NEVER COMMIT (especially in public repos)
+# Codec Pro is a commercial font. Each user must place their
+# own licensed copy in fonts/ locally.
+# =============================================================
+fonts/*.ttf
+fonts/*.otf
+fonts/*.woff
+fonts/*.woff2
+!fonts/README.md
+
+# Outputs are generated, not committed
+output/
+*.zip
+
+# State file (local only)
+.run_state.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Local Excel inputs (commit only template, not real data if you want)
+input/*.xlsx
+!input/template.xlsx

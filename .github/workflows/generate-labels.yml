@@ -1,0 +1,48 @@
+name: Generate Product Labels
+
+# Runs on:
+#  1. Manual trigger (Actions tab → Run workflow)
+#  2. Push to main when input/*.xlsx changes
+#  3. Daily 09:00 Bangkok time (02:00 UTC)
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'input/**.xlsx'
+      - 'generate_labels.py'
+      - 'fonts/**'
+  schedule:
+    - cron: '0 2 * * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Generate labels for every Excel file in input/
+        run: |
+          mkdir -p output
+          for f in input/*.xlsx; do
+            [ -e "$f" ] || continue
+            name=$(basename "$f" .xlsx)
+            echo "==> $name"
+            python generate_labels.py --excel "$f" --out "output/$name"
+          done
+
+      - name: Upload labels artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dandy-labels-${{ github.run_number }}
+          path: output/
+          retention-days: 30
