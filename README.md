@@ -1,35 +1,40 @@
-# DANDY COSMO — Label Generator
+# DANDY COSMO — Price Tag Generator
 
-Pixel-identical product labels from Excel. Same input → same output, every time.
+Pixel-identical product price tags from Excel. Same input → same output, every time. Print-ready at 3×4 cm.
 
 ## Why this exists
 
-ChatGPT renders each label as a fresh image — fonts shift, positions drift, batch jobs are unreliable. This repo solves that by treating label rendering as code:
+ChatGPT renders each label as a fresh image — fonts shift, positions drift, batch jobs are unreliable. This repo solves that by treating tag rendering as code:
 
-- **Locked font** — `fonts/CodecPro-Regular.ttf` is committed to the repo. The script refuses to use anything else.
+- **Locked font** — Codec Pro Regular only, no fallback. Script errors if font missing.
 - **Deterministic layout** — every coordinate is fixed in `generate_labels.py`. No AI, no randomness.
 - **Batch by default** — drop a 1,000-row Excel in `input/`, get 1,000 PNGs in `output/`.
-- **Scheduled runs** — GitHub Actions rebuilds labels automatically when Excel files change, or on a daily cron.
+- **Change detection** — `watch_and_run.py` only re-renders Excel files that actually changed.
+- **Scheduled runs** — runs daily via Claude Cowork or GitHub Actions.
 
-## Spec (do not change without testing print quality)
+## Spec v2 (current — do not change without retesting print quality)
 
 | Element | Value |
 |---|---|
-| Canvas | 800 × 600 px (3:4 horizontal) |
+| Canvas | **1600 × 1200 px** (prints at 3 × 4 cm, ~1000 DPI) |
 | Background | #FFFFFF |
 | Text color | #000000 |
-| Font | Codec Pro Regular (NOT bold) |
-| Product name | Top center, single line, auto-fit 18-38pt |
-| Color/Size/Price | Left aligned, values column-aligned, 32pt |
-| Barcode | Code 128, full width within padding, height ≤ 1/3 of canvas |
-| Footer | `www.DANDYCOSMO.com` centered, 16pt, bottom |
+| Font | Codec Pro Regular only (`fonts/CodecPro-Regular.ttf` required) |
+| Header (product name) | Center, Y=92, font 116pt → shrinks to 60pt to fit one line |
+| Color row | Label X=98, Value X=405, Y=253, font 98pt |
+| Size row | Label X=98, Value X=405, Y=384, font 98pt |
+| Price row | Label X=98, Value X=405, Y=515, font 98pt, format `THB 1,290` |
+| Barcode | Code 128, X=132, Y=660, W=1336, H=390, no quiet zone, even pixel distribution |
+| Footer | `www.DANDYCOSMO.com`, center, Y=1082, font 90pt |
+
+Layout priority on collision: Barcode → Footer → Info → Header. Only the header font shrinks to resolve overflow.
 
 ## Setup (one time)
 
 1. Clone the repo.
 2. **Drop the licensed Codec Pro font file** into `fonts/`:
-   - File must be named `CodecPro-Regular.ttf`
-   - Without it, the script falls back to DejaVu Sans and prints a warning.
+   - File must be named exactly `CodecPro-Regular.ttf`
+   - Codec Pro is commercial and **not** committed (blocked by `.gitignore`).
 3. Install Python deps:
 
 ```bash
@@ -38,54 +43,67 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Single Excel file
+### Run once on a single Excel file
 
 ```bash
 python generate_labels.py --excel input/products.xlsx --out output/
 ```
 
-Outputs:
-- `output/{SKU}.png` — one PNG per SKU
-- `output/labels.zip` — all PNGs bundled
+### Watch & run all Excel files (recommended)
 
-### Excel format (required columns)
+Detects which Excel files are new or modified and processes only those:
+
+```bash
+python watch_and_run.py
+```
+
+Force re-render everything (e.g., after font/layout changes):
+
+```bash
+python watch_and_run.py --force
+```
+
+### Output structure
+
+```
+output/
+└── {excel_filename}/
+    ├── {SKU1}.png        ← 1600×1200 price tag
+    ├── {SKU2}.png
+    ├── ...
+    └── {excel_filename}.zip   ← all PNGs bundled
+```
+
+## Excel format (required columns)
 
 | Product name | SKU | Color | Size | Price |
 |---|---|---|---|---|
 | Muscle Fit Alpha Knit Polo | MS_ALPHAPOLO_BLACK_M | BLACK | M | 1650 |
 
-Multiple sheets are concatenated automatically.
+Column names must match exactly (case-sensitive). Multiple sheets in one file are concatenated automatically.
 
-### Skip the zip
+## Automation
 
-```bash
-python generate_labels.py --excel input/products.xlsx --out output/ --no-zip
-```
+### Claude Cowork (recommended for daily use)
 
-## Automation (GitHub Actions)
+A scheduled task `dandy-label-watch` runs daily at 09:09 local time. It calls `watch_and_run.py`, processes only modified Excel files, and reports results.
 
-`.github/workflows/generate-labels.yml` runs the generator:
-- on every push that changes `input/*.xlsx`
-- on manual trigger from the Actions tab
-- daily at 09:00 Bangkok time (02:00 UTC)
+### GitHub Actions
 
-The PNG bundle is uploaded as a build artifact. Download from the workflow run page.
+`.github/workflows/generate-labels.yml` runs on every push to `input/*.xlsx` or on manual trigger. Outputs are uploaded as build artifacts. Note: the cloud runner falls back to system fonts because Codec Pro is not committed — Actions is for syntax validation, not production-quality output.
 
-## When labels look wrong
+## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| Font looks generic / wrong | `fonts/CodecPro-Regular.ttf` missing — drop it in. |
-| Product name overflows | Max font is 38pt; rename product or raise `PRODUCT_NAME_MAX_FONT`. |
-| Barcode won't scan | Increase `module_width` in `render_barcode_image`, or lower `BARCODE_HEIGHT_RATIO` so bars get thicker per dot. |
-| Price shows decimals | Excel cell is text — make sure the column type is number. |
-| Output looks different on two machines | Confirm both have the same font file, same Pillow version (pinned in `requirements.txt`). |
-
-## Layout knobs (top of `generate_labels.py`)
-
-All layout numbers live in the CONFIGURATION block. Change there, not inside `render_label`. Test one SKU before committing.
+| `REQUIRED FONT NOT FOUND` error | Place `CodecPro-Regular.ttf` in `fonts/` |
+| Tag layout doesn't match spec | Don't edit constants outside the CONFIGURATION block in `generate_labels.py` |
+| Barcode won't scan | Test print at exactly 4 cm wide; if still failing, increase `BARCODE_W` slightly or contact maintainer |
+| Output looks different on two machines | Confirm both have the same Codec Pro file and pinned Pillow version |
+| Same Excel won't re-render | Use `--force` flag or delete `.run_state.json` |
 
 ## License notes
 
-- Codec Pro is a commercial font from Monotype/Solpera. The `.ttf` is **not** in this repo by default — you commit your licensed copy under your own seat. Do not redistribute.
+- Codec Pro is a commercial font from Solpera/Monotype. Each user must have their own license — never commit the font file to a repo (public or private).
 - Code 128 is a free, open barcode standard.
+- Project code is for internal DANDY HOME use.
